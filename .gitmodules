@@ -1,0 +1,3 @@
+[submodule "system.net"]
+	path = system.net
+	url = https://github.com/wtrsltnk/system.net.git
