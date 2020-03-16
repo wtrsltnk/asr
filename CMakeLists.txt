@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.0)
 
-project(aso)
+project(asr)
+
+add_subdirectory(fmt)
 
 add_library(system.net
     system.net/src/http/httplistener.cpp
@@ -26,17 +28,21 @@ target_include_directories(system.net
     PUBLIC system.net/include
     )
 
-add_executable(aso
+add_executable(asr
     program.cpp
     sqlite3/sqlite3.c
     README.md
     )
 
-target_link_libraries(aso
+target_compile_features(asr
+    PUBLIC cxx_std_17)
+
+target_link_libraries(asr
     system.net
-     ws2_32
+    fmt
+    ws2_32
     )
 
-target_include_directories(aso
+target_include_directories(asr
     PUBLIC system.net/include
     )

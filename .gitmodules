@@ -1,3 +1,6 @@
 [submodule "system.net"]
 	path = system.net
 	url = https://github.com/wtrsltnk/system.net.git
+[submodule "fmt"]
+	path = fmt
+	url = https://github.com/fmtlib/fmt.git
