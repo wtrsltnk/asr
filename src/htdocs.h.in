@@ -1,0 +1,8 @@
+#ifndef HTDOCS_H
+#define HTDOCS_H
+
+#define HTDOCS_STYLES R"RAW(${HTDOCS_STYLES})RAW"
+
+#define HTDOCS_SCRIPTS R"RAW(${HTDOCS_SCRIPTS})RAW"
+
+#endif // HTDOCS_H

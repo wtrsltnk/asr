@@ -1,0 +1,10 @@
+#ifndef ASR_VERSION_H
+#define ASR_VERSION_H
+
+// the configured options and settings for ASR
+#define ASR_VERSION "@asr_VERSION@"
+#define ASR_VERSION_MAJOR "@asr_VERSION_MAJOR@"
+#define ASR_VERSION_MINOR "@asr_VERSION_MINOR@"
+#define ASR_VERSION_PATCH "@asr_VERSION_PATCH@"
+
+#endif // ASR_VERSION_H
