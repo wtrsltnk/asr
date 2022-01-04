@@ -64,8 +64,6 @@ class DataTable
 public:
     DataTable();
     explicit DataTable(
-        DataTable const &other);
-    explicit DataTable(
         const char *name);
 
     inline std::string const &Name() const { return _name; }
@@ -83,13 +81,6 @@ public:
 };
 
 DataTable::DataTable()
-{}
-
-DataTable::DataTable(
-    DataTable const &other)
-    : _name(other._name),
-      _primaryKey(other._primaryKey),
-      _columns(other._columns)
 {}
 
 DataTable::DataTable(
@@ -112,20 +103,25 @@ void DataTable::AddColumn(
     char const *name,
     char const *type)
 {
+    std::cout << name << ":" << type << std::endl;
     if (std::string_view(type) == "INTEGER" || std::string_view(type).substr(0, 7) == "NUMERIC")
     {
+        std::cout << name << ":ColumnTypes::Integer" << std::endl;
         _columns.insert(std::make_pair(name, ColumnTypes::Integer));
     }
     else if (std::string_view(type) == "TEXT" || std::string_view(type).substr(0, 8) == "NVARCHAR")
     {
+        std::cout << name << ":ColumnTypes::Text" << std::endl;
         _columns.insert(std::make_pair(name, ColumnTypes::Text));
     }
     else if (std::string_view(type) == "Blob")
     {
+        std::cout << name << ":ColumnTypes::Blob" << std::endl;
         _columns.insert(std::make_pair(name, ColumnTypes::Blob));
     }
     else if (std::string_view(type) == "REAL")
     {
+        std::cout << name << ":ColumnTypes::Real" << std::endl;
         _columns.insert(std::make_pair(name, ColumnTypes::Real));
     }
 }
@@ -140,21 +136,30 @@ public:
         std::string const &db);
     ~DataCollection();
 
-    nlohmann::json get();
+    inline std::vector<DataTable> const &Tables() const { return _tables; }
+
+    nlohmann::json get(
+        const DataTable &table) const;
+
+    nlohmann::json get(
+        const DataTable &table,
+        const std::string &key) const;
 
     nlohmann::json post(
+        const DataTable &table,
         nlohmann::json const &obj);
 
     void patch(
+        const DataTable &table,
         nlohmann::json const &obj);
 
     void put(
+        const DataTable &table,
         nlohmann::json const &obj);
 
     void remove(
+        const DataTable &table,
         nlohmann::json const &obj);
-
-    inline std::vector<DataTable> const &Tables() const { return _tables; }
 };
 
 std::vector<DataTable> ListTables(
@@ -243,24 +248,93 @@ DataCollection::~DataCollection()
     sqlite3_close(_db);
 }
 
-nlohmann::json DataCollection::get()
+nlohmann::json getData(
+    sqlite3_stmt *stmt)
 {
-    nlohmann::json v;
+    auto result = nlohmann::json::array();
 
-    for (auto &table : _tables)
+    while (sqlite3_step(stmt) == SQLITE_ROW)
     {
-        nlohmann::json data = {
-            {"name", table.Name()},
-            {"primary-key", table.PrimaryKey()},
-        };
+        nlohmann::json row;
 
-        v.push_back(data);
+        row["index"] = result.size();
+
+        for (int i = 0; i < sqlite3_column_count(stmt); i++)
+        {
+            auto type = sqlite3_column_type(stmt, i);
+            auto name = sqlite3_column_name(stmt, i);
+
+            nlohmann::json cell;
+
+            if (type == 3)
+            {
+                auto size = sqlite3_column_bytes(stmt, i);
+                auto text = sqlite3_column_text(stmt, i);
+
+                auto str = std::string(reinterpret_cast<const char *>(text), size);
+
+                row[name] = str;
+            }
+            else if (type == 1)
+            {
+                auto value = sqlite3_column_int(stmt, i);
+
+                row[name] = value;
+            }
+        }
+        result.push_back(row);
     }
 
-    return v;
+    return result;
+}
+
+nlohmann::json DataCollection::get(
+    const DataTable &table,
+    const std::string &key) const
+{
+    std::stringstream ss;
+
+    ss << "select * from " << table.Name() << " where " << table.PrimaryKey() << " = ?";
+
+    auto sql = ss.str();
+
+    sqlite3_stmt *stmt;
+    sqlite3_prepare_v2(_db, sql.c_str(), int(sql.length()), &stmt, nullptr);
+    sqlite3_bind_text(stmt, 1, key.c_str(), int(key.length()), SQLITE_STATIC);
+
+    auto result = getData(stmt);
+
+    sqlite3_finalize(stmt);
+
+    if (result.empty())
+    {
+        return nlohmann::json();
+    }
+
+    return result[0];
+}
+
+nlohmann::json DataCollection::get(
+    const DataTable &table) const
+{
+    std::stringstream ss;
+
+    ss << "select * from " << table.Name() << ";";
+
+    auto sql = ss.str();
+
+    sqlite3_stmt *stmt;
+    sqlite3_prepare_v2(_db, sql.c_str(), int(sql.length()), &stmt, nullptr);
+
+    auto result = getData(stmt);
+
+    sqlite3_finalize(stmt);
+
+    return result;
 }
 
 nlohmann::json DataCollection::post(
+    const DataTable &table,
     const nlohmann::json &obj)
 {
     (void)obj;
@@ -286,26 +360,48 @@ void RouteStatic(
     const std::string &content,
     const std::string &contentType,
     const System::Net::Http::HttpListenerRequest &request,
-    System::Net::Http::HttpListenerResponse &response);
+    System::Net::Http::HttpListenerResponse &response,
+    const std::smatch &matches);
 
 void RouteHelp(
     const System::Net::Http::HttpListenerRequest &request,
-    System::Net::Http::HttpListenerResponse &response);
+    System::Net::Http::HttpListenerResponse &response,
+    const std::smatch &matches);
 
 void RouteQuit(
     const System::Net::Http::HttpListenerRequest &request,
-    System::Net::Http::HttpListenerResponse &response);
+    System::Net::Http::HttpListenerResponse &response,
+    const std::smatch &matches);
+
+void RouteGetAllApi(
+    const DataCollection &collection,
+    const System::Net::Http::HttpListenerRequest &request,
+    System::Net::Http::HttpListenerResponse &response,
+    const std::smatch &matches);
+
+void RouteGetByIdApi(
+    const DataCollection &collection,
+    const System::Net::Http::HttpListenerRequest &request,
+    System::Net::Http::HttpListenerResponse &response,
+    const std::smatch &matches);
 
 void RouteRoot(
     const char *dbFile,
-    DataCollection &collection,
+    const DataCollection &collection,
     const System::Net::Http::HttpListenerRequest &request,
-    System::Net::Http::HttpListenerResponse &response);
+    System::Net::Http::HttpListenerResponse &response,
+    const std::smatch &matches);
 
 void InternalServerError(
     std::string const &err,
     const System::Net::Http::HttpListenerRequest &request,
-    System::Net::Http::HttpListenerResponse &response);
+    System::Net::Http::HttpListenerResponse &response,
+    const std::smatch &matches);
+
+void NotFoundError(
+    const System::Net::Http::HttpListenerRequest &request,
+    System::Net::Http::HttpListenerResponse &response,
+    const std::smatch &matches);
 
 std::string showHelp(
     std::string const &exe,
@@ -345,14 +441,15 @@ private:
     bool m_Stopped;
 };
 
-typedef std::vector<std::pair<std::regex, std::function<void(const System::Net::Http::HttpListenerRequest &request, System::Net::Http::HttpListenerResponse &response)>>> RouteCollection;
+typedef std::function<void(const System::Net::Http::HttpListenerRequest &request, System::Net::Http::HttpListenerResponse &response, const std::smatch &matches)> RouteHandler;
+typedef std::vector<std::pair<std::regex, RouteHandler>> RouteCollection;
 
 class Router
 {
 public:
     void Get(
         const std::string &pattern,
-        std::function<void(const System::Net::Http::HttpListenerRequest &request, System::Net::Http::HttpListenerResponse &response)> handler);
+        RouteHandler handler);
 
     bool Route(
         const System::Net::Http::HttpListenerRequest &request,
@@ -366,7 +463,7 @@ private:
 
 void Router::Get(
     const std::string &pattern,
-    std::function<void(const System::Net::Http::HttpListenerRequest &request, System::Net::Http::HttpListenerResponse &response)> handler)
+    RouteHandler handler)
 {
     auto r = std::regex(pattern);
 
@@ -381,12 +478,14 @@ bool Router::Route(
     {
         for (auto &route : _getRoutes)
         {
-            if (!std::regex_match(request.RawUrl(), route.first))
+            std::smatch matches;
+            if (!std::regex_match(request.RawUrl(), matches, route.first))
             {
                 continue;
             }
 
-            route.second(request, response);
+            route.second(request, response, matches);
+
             return true;
         }
     }
@@ -446,17 +545,43 @@ int main(
 
         router.Get("/quit", RouteQuit);
         router.Get("/asr.exe", RouteHelp);
-        router.Get("/", [&dbFile, &collection](const System::Net::Http::HttpListenerRequest &request, System::Net::Http::HttpListenerResponse &response) {
-            RouteRoot(dbFile, collection, request, response);
-        });
+        router.Get("/",
+                   [&dbFile, &collection](
+                       const System::Net::Http::HttpListenerRequest &request,
+                       System::Net::Http::HttpListenerResponse &response,
+                       const std::smatch &matches) {
+                       RouteRoot(dbFile, collection, request, response, matches);
+                   });
+        router.Get(R"(/api/([\w\-]+)$)",
+                   [&collection](
+                       const System::Net::Http::HttpListenerRequest &request,
+                       System::Net::Http::HttpListenerResponse &response,
+                       const std::smatch &matches) {
+                       RouteGetAllApi(collection, request, response, matches);
+                   });
+        router.Get(R"(/api/([\w\-]+)/([\w\-]+)$)",
+                   [&collection](
+                       const System::Net::Http::HttpListenerRequest &request,
+                       System::Net::Http::HttpListenerResponse &response,
+                       const std::smatch &matches) {
+                       RouteGetByIdApi(collection, request, response, matches);
+                   });
 
-        router.Get("/styles.css", [](const System::Net::Http::HttpListenerRequest &request, System::Net::Http::HttpListenerResponse &response) {
-            RouteStatic(HTDOCS_STYLES, "text/css", request, response);
-        });
+        router.Get("/styles.css",
+                   [](
+                       const System::Net::Http::HttpListenerRequest &request,
+                       System::Net::Http::HttpListenerResponse &response,
+                       const std::smatch &matches) {
+                       RouteStatic(HTDOCS_STYLES, "text/css", request, response, matches);
+                   });
 
-        router.Get("/scripts.js", [](const System::Net::Http::HttpListenerRequest &request, System::Net::Http::HttpListenerResponse &response) {
-            RouteStatic(HTDOCS_SCRIPTS, "text/javascript", request, response);
-        });
+        router.Get("/scripts.js",
+                   [](
+                       const System::Net::Http::HttpListenerRequest &request,
+                       System::Net::Http::HttpListenerResponse &response,
+                       const std::smatch &matches) {
+                       RouteStatic(HTDOCS_SCRIPTS, "text/javascript", request, response, matches);
+                   });
 
         while (keepServerRunning)
         {
@@ -470,33 +595,7 @@ int main(
                 continue;
             }
 
-            ParseQuery(context->Request(), collection);
-
-            nlohmann::json result;
-            if (context->Request()->HttpMethod() == "GET")
-            {
-                result = nlohmann::json(collection.get());
-            }
-            else if (context->Request()->HttpMethod() == "POST")
-            {
-                nlohmann::json v = nlohmann::json::parse(context->Request()->_payload);
-                if (v.empty())
-                {
-                    InternalServerError("error parsing json", *(context->Request()), *(context->Response()));
-                    continue;
-                }
-
-                result = collection.post(v);
-            }
-
-            context->Response()
-                ->SetStatusCode(200);
-            context->Response()
-                ->SetContentType("application/json");
-            context->Response()
-                ->WriteOutput(result.dump());
-            context->Response()
-                ->CloseOutput();
+            NotFoundError(*(context->Request()), *(context->Response()), std::smatch());
         }
 
         listener.Stop();
@@ -562,9 +661,11 @@ void RouteStatic(
     const std::string &content,
     const std::string &contentType,
     const System::Net::Http::HttpListenerRequest &request,
-    System::Net::Http::HttpListenerResponse &response)
+    System::Net::Http::HttpListenerResponse &response,
+    const std::smatch &matches)
 {
     (void)request;
+    (void)matches;
 
     response.SetContentType(contentType);
 
@@ -573,8 +674,11 @@ void RouteStatic(
 
 void RouteHelp(
     const System::Net::Http::HttpListenerRequest &request,
-    System::Net::Http::HttpListenerResponse &response)
+    System::Net::Http::HttpListenerResponse &response,
+    const std::smatch &matches)
 {
+    (void)matches;
+
     std::stringstream ss;
 
     ss << Header()
@@ -591,8 +695,11 @@ void RouteHelp(
 
 void RouteQuit(
     const System::Net::Http::HttpListenerRequest &request,
-    System::Net::Http::HttpListenerResponse &response)
+    System::Net::Http::HttpListenerResponse &response,
+    const std::smatch &matches)
 {
+    (void)matches;
+
     std::stringstream ss;
 
     ss << "<!doctype html>"
@@ -612,12 +719,72 @@ void RouteQuit(
     keepServerRunning = false;
 }
 
+void RouteGetAllApi(
+    const DataCollection &collection,
+    const System::Net::Http::HttpListenerRequest &request,
+    System::Net::Http::HttpListenerResponse &response,
+    const std::smatch &matches)
+{
+    (void)collection;
+    (void)matches;
+
+    auto found = std::find_if(
+        collection.Tables().begin(),
+        collection.Tables().end(),
+        [&matches](const DataTable &table) {
+            return table.Name() == matches[1];
+        });
+
+    if (found == collection.Tables().end())
+    {
+        NotFoundError(request, response, matches);
+        return;
+    }
+
+    auto data = collection.get(*found);
+
+    response.SetContentType("application/json");
+
+    Ok(data.dump(4), request, response);
+}
+
+void RouteGetByIdApi(
+    const DataCollection &collection,
+    const System::Net::Http::HttpListenerRequest &request,
+    System::Net::Http::HttpListenerResponse &response,
+    const std::smatch &matches)
+{
+    (void)matches;
+
+    auto found = std::find_if(
+        collection.Tables().begin(),
+        collection.Tables().end(),
+        [&matches](const DataTable &table) {
+            return table.Name() == matches[1];
+        });
+
+    if (found == collection.Tables().end())
+    {
+        NotFoundError(request, response, matches);
+        return;
+    }
+
+    auto data = collection.get(*found, matches[2]);
+
+    response.SetContentType("application/json");
+
+    Ok(data.dump(4), request, response);
+}
+
 void RouteRoot(
     const char *dbFile,
-    DataCollection &collection,
+    const DataCollection &collection,
     const System::Net::Http::HttpListenerRequest &request,
-    System::Net::Http::HttpListenerResponse &response)
+    System::Net::Http::HttpListenerResponse &response,
+    const std::smatch &matches)
 {
+    (void)matches;
+
     auto db = fs::path(dbFile);
 
     std::stringstream ss;
@@ -636,55 +803,173 @@ void RouteRoot(
 
         ss << "<h3>" << table.Name() << "</h3>";
 
-        ss << "<div class=\"accordion\">";
+        ss << "<div>";
 
         ss << "        <button type=\"button\" class=\"endpoint collapsible\">"
            << "            <span class=\"method get\">GET</span>"
-           << "            <span>/" << table.Name() << "</span>"
+           << "            <span>/api/" << table.Name() << "/{" << table.PrimaryKey() << "}</span>"
            << "        </button>"
            << "        <div class=\"content\">"
            << "            <div class=\"content-margin\">"
            << "                GetById"
            << "            </div>"
+           << "            <div class=\"content-margin\">"
+           << "                <table>"
+           << "                    <thead>"
+           << "                        <tr>"
+           << "                            <th>Name</th>"
+           << "                            <th>Description</th>"
+           << "                        </tr>"
+           << "                    </thead>"
+           << "                    <tbody>"
+           << "                        <tr class=\"required\">"
+           << "                            <td>"
+           << "                                <strong>" << table.PrimaryKey() << "</strong>"
+           << "                            </td>"
+           << "                            <td>"
+           << "                                <p>Id field to retrieve.</p>"
+           << "                                <input class=\"request-parameter\" type=\"text\" name=\"" << table.PrimaryKey() << "\" placeholder=\"" << table.PrimaryKey() << "\" />"
+           << "                            </td>"
+           << "                        </tr>"
+           << "                    </tbody>"
+           << "                </table>"
+           << "            </div>"
+           << "            <div class=\"content-margin text-end\">"
+           << "                <button type=\"button\" onclick=\"new DotcppClient(this).runRequest('GET', '/api/" << table.Name() << "/{" << table.PrimaryKey() << "}')\">"
+           << "                    Try this endpoint"
+           << "                </button>"
+           << "            </div>"
            << "        </div>";
 
         ss << "        <button type=\"button\" class=\"endpoint collapsible\">"
            << "            <span class=\"method get\">GET</span>"
-           << "            <span>/" << table.Name() << "/{" << table.PrimaryKey() << "}</span>"
+           << "            <span>/api/" << table.Name() << "</span>"
            << "        </button>"
            << "        <div class=\"content\">"
            << "            <div class=\"content-margin\">"
            << "                GetAll"
            << "            </div>"
+           << "            <div class=\"content-margin text-end\">"
+           << "                <button type=\"button\" onclick=\"new DotcppClient(this).runRequest('GET', '/api/" << table.Name() << "')\">"
+           << "                    Try this endpoint"
+           << "                </button>"
+           << "            </div>"
            << "        </div>";
 
         ss << "        <button type=\"button\" class=\"endpoint collapsible\">"
            << "            <span class=\"method post\">POST</span>"
-           << "            <span>/" << table.Name() << "</span>"
+           << "            <span>/api/" << table.Name() << "</span>"
            << "        </button>"
            << "        <div class=\"content\" id=\"" << table.Name() << "_Post\">"
            << "            <div class=\"content-margin\">"
            << "                Post"
            << "            </div>"
+           << "            <div class=\"content-margin\">"
+           << "                <table>"
+           << "                    <thead>"
+           << "                        <tr>"
+           << "                            <th>Name</th>"
+           << "                            <th>Description</th>"
+           << "                        </tr>"
+           << "                    </thead>"
+           << "                    <tbody>"
+           << "                        <tr class=\"required\">"
+           << "                            <td>"
+           << "                                <strong>body</strong>"
+           << "                            </td>"
+           << "                            <td>"
+           << "                                <p>target object to add.</p>"
+           << "                                <textarea class=\"request-parameter\" name=\"body\"></textarea>"
+           << "                            </td>"
+           << "                        </tr>"
+           << "                    </tbody>"
+           << "                </table>"
+           << "            </div>"
+           << "            <div class=\"content-margin text-end\">"
+           << "                <button type=\"button\" onclick=\"new DotcppClient(this).runRequest('POST', '/api/" << table.Name() << "')\">"
+           << "                    Try this endpoint"
+           << "                </button>"
+           << "            </div>"
            << "        </div>";
 
         ss << "        <button type=\"button\" class=\"endpoint collapsible\">"
            << "            <span class=\"method put\">PUT</span>"
-           << "            <span>/" << table.Name() << "/{" << table.PrimaryKey() << "}</span>"
+           << "            <span>/api/" << table.Name() << "/{" << table.PrimaryKey() << "}</span>"
            << "        </button>"
            << "        <div class=\"content\" id=\"" << table.Name() << "_Put\">"
            << "            <div class=\"content-margin\">"
            << "                Put"
            << "            </div>"
+           << "            <div class=\"content-margin\">"
+           << "                <table>"
+           << "                    <thead>"
+           << "                        <tr>"
+           << "                            <th>Name</th>"
+           << "                            <th>Description</th>"
+           << "                        </tr>"
+           << "                    </thead>"
+           << "                    <tbody>"
+           << "                        <tr class=\"required\">"
+           << "                            <td>"
+           << "                                <strong>" << table.PrimaryKey() << "</strong>"
+           << "                            </td>"
+           << "                            <td>"
+           << "                                <p>Id field of the item to update.</p>"
+           << "                                <input class=\"request-parameter\" type=\"text\" name=\"" << table.PrimaryKey() << "\" placeholder=\"" << table.PrimaryKey() << "\" />"
+           << "                            </td>"
+           << "                        </tr>"
+           << "                        <tr class=\"required\">"
+           << "                            <td>"
+           << "                                <strong>body</strong>"
+           << "                            </td>"
+           << "                            <td>"
+           << "                                <p>target object to add.</p>"
+           << "                                <textarea class=\"request-parameter\" name=\"body\"></textarea>"
+           << "                            </td>"
+           << "                        </tr>"
+           << "                    </tbody>"
+           << "                </table>"
+           << "            </div>"
+           << "            <div class=\"content-margin text-end\">"
+           << "                <button type=\"button\" onclick=\"new DotcppClient(this).runRequest('PUT', '/api/" << table.Name() << "/{" << table.PrimaryKey() << "}')\">"
+           << "                    Try this endpoint"
+           << "                </button>"
+           << "            </div>"
            << "        </div>";
 
         ss << "        <button type=\"button\" class=\"endpoint collapsible\">"
            << "            <span class=\"method delete\">DELETE</span>"
-           << "            <span>/" << table.Name() << "/{" << table.PrimaryKey() << "}</span>"
+           << "            <span>/api/" << table.Name() << "/{" << table.PrimaryKey() << "}</span>"
            << "        </button>"
            << "        <div class=\"content\" id=\"" << table.Name() << "_Delete\">"
            << "            <div class=\"content-margin\">"
            << "                Delete"
+           << "            </div>"
+           << "            <div class=\"content-margin\">"
+           << "                <table>"
+           << "                    <thead>"
+           << "                        <tr>"
+           << "                            <th>Name</th>"
+           << "                            <th>Description</th>"
+           << "                        </tr>"
+           << "                    </thead>"
+           << "                    <tbody>"
+           << "                        <tr class=\"required\">"
+           << "                            <td>"
+           << "                                <strong>" << table.PrimaryKey() << "</strong>"
+           << "                            </td>"
+           << "                            <td>"
+           << "                                <p>Id field of the item to delete.</p>"
+           << "                                <input class=\"request-parameter\" type=\"text\" name=\"" << table.PrimaryKey() << "\" placeholder=\"" << table.PrimaryKey() << "\" />"
+           << "                            </td>"
+           << "                        </tr>"
+           << "                    </tbody>"
+           << "                </table>"
+           << "            </div>"
+           << "            <div class=\"content-margin text-end\">"
+           << "                <button type=\"button\" onclick=\"new DotcppClient(this).runRequest('DELETE', '/api/" << table.Name() << "/{" << table.PrimaryKey() << "}')\">"
+           << "                    Try this endpoint"
+           << "                </button>"
            << "            </div>"
            << "        </div>";
 
@@ -712,7 +997,8 @@ void RouteRoot(
 void InternalServerError(
     std::string const &err,
     const System::Net::Http::HttpListenerRequest &request,
-    System::Net::Http::HttpListenerResponse &response)
+    System::Net::Http::HttpListenerResponse &response,
+    const std::smatch &matches)
 {
     (void)request;
 
@@ -726,6 +1012,26 @@ void InternalServerError(
        << "</html>";
 
     response.SetStatusCode(500);
+    response.WriteOutput(ss.str());
+    response.CloseOutput();
+}
+
+void NotFoundError(
+    const System::Net::Http::HttpListenerRequest &request,
+    System::Net::Http::HttpListenerResponse &response,
+    const std::smatch &matches)
+{
+    (void)request;
+
+    std::stringstream ss;
+
+    ss << "<html>"
+       << "<body>"
+       << "<h1 class=\"display-4 text-center my-4\">Not found Error</h1>"
+       << "</body"
+       << "</html>";
+
+    response.SetStatusCode(404);
     response.WriteOutput(ss.str());
     response.CloseOutput();
 }
