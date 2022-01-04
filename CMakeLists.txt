@@ -1,21 +1,9 @@
 cmake_minimum_required(VERSION 3.0)
 
+include(cmake/CPM.cmake)
+CPMAddPackage("gh:fmtlib/fmt#7.1.3")
+
 project(asr)
-
-add_subdirectory(fmt)
-
-add_library(system.net
-    system.net/src/http/httplistener.cpp
-    system.net/include/http/httplistener.h
-    system.net/src/http/httplistenercontext.cpp
-    system.net/include/http/httplistenercontext.h
-    system.net/src/http/httplistenerresponse.cpp
-    system.net/include/http/httplistenerresponse.h
-    system.net/src/http/httplistenerrequest.cpp
-    system.net/include/http/httplistenerrequest.h
-    system.net/src/http/httplistenerexception.cpp
-    system.net/include/http/httplistenerexception.h
-    )
 
 target_compile_features(system.net
     PRIVATE cxx_auto_type
