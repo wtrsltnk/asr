@@ -389,7 +389,7 @@ h1 > a {
     text-decoration: none;
 }
 
-pre, code {
+pre, code, textarea {
     font-family: 'Ubuntu Mono', monospace;
     overflow: auto;
 }
@@ -672,4 +672,18 @@ button.endpoint.active {
 
 .nav-link:focus, .nav-link:hover {
     color: #0a58ca;
+}
+
+.container .block {
+    background-color: #fff;
+    padding: 20px;
+    box-shadow: 0 .5rem 1rem rgba(0,0,0,.15);
+    margin-bottom: 20px;
+}
+
+.container .block pre{
+    margin-left: 40px;
+    color: #fff;
+    background-color: #333;
+    padding: 10px;
 }

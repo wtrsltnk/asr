@@ -4,14 +4,16 @@ include(cmake/CPM.cmake)
 CPMAddPackage("gh:fmtlib/fmt#7.1.3")
 CPMAddPackage("gh:nlohmann/json@3.10.5")
 
+include(cmake/htdocs.cmake)
+
 project(asr VERSION 1.0.0)
 
 configure_file(src/config.h.in config.h)
 
-file (STRINGS "htdocs/css/styles.css" HTDOCS_RAW_STYLES NEWLINE_CONSUME)
-string(REPLACE "\;" ";" HTDOCS_STYLES ${HTDOCS_RAW_STYLES})
-file (STRINGS "htdocs/js/scripts.js" HTDOCS_RAW_SCRIPTS NEWLINE_CONSUME)
-string(REPLACE "\;" ";" HTDOCS_SCRIPTS ${HTDOCS_RAW_SCRIPTS})
+add_htdocs_file("htdocs/css/styles.css" HTDOCS_STYLES)
+add_htdocs_file("htdocs/js/scripts.js" HTDOCS_SCRIPTS)
+add_htdocs_file("htdocs/aggregate-root.html" HTDOCS_AGGREGATEROOTHTML)
+
 configure_file(src/htdocs.h.in htdocs.h)
 
 add_library(system.net
@@ -42,9 +44,15 @@ target_include_directories(system.net
 add_executable(asr
     htdocs/css/styles.css
     htdocs/js/scripts.js
+    htdocs/aggregate-root.html
     src/program.cpp
+    src/common/templateutils.cpp
+    src/common/templateutils.h
+    src/common/instrumentationtimer.cpp
+    src/common/instrumentationtimer.h
     thirdparty/sqlite3/sqlite3.c
     README.md
+    "${PROJECT_BINARY_DIR}/htdocs.h"
 )
 
 target_compile_features(asr
@@ -62,4 +70,22 @@ target_include_directories(asr
     PUBLIC
         "thirdparty/"
         "${PROJECT_BINARY_DIR}"
+        )
+
+CPMAddPackage("gh:catchorg/Catch2@2.13.8")
+
+add_executable(asr_tests
+    tests/tests-bootstrap.cpp
+    tests/templateutils_tests.cpp
+    src/common/templateutils.cpp
+    src/common/templateutils.h
+)
+
+target_link_libraries(asr_tests
+    Catch2
+    fmt
+)
+
+target_compile_features(asr_tests
+    PUBLIC cxx_std_14
 )

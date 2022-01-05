@@ -1,3 +1,5 @@
+#include "common/instrumentationtimer.h"
+#include "common/templateutils.h"
 #include <config.h>
 #include <filesystem>
 #include <fmt/format.h>
@@ -57,15 +59,18 @@ enum class ColumnTypes
 
 class DataTable
 {
-    std::string _name;
+    std::string _rawName;
+    std::string _name = "";
+    int _version = 1;
     std::string _primaryKey;
     std::map<std::string, ColumnTypes> _columns;
 
 public:
     DataTable();
     explicit DataTable(
-        const char *name);
+        const std::string &name);
 
+    inline std::string const &RawName() const { return _rawName; }
     inline std::string const &Name() const { return _name; }
     inline std::string const &PrimaryKey() const { return _primaryKey; }
     inline std::map<std::string, ColumnTypes> const &Columns() const { return _columns; }
@@ -84,9 +89,19 @@ DataTable::DataTable()
 {}
 
 DataTable::DataTable(
-    const char *name)
-    : _name(name)
-{}
+    const std::string &name)
+    : _rawName(name)
+{
+    auto versionRegex = std::regex(R"(([\w]+)_v([0-9]+))");
+
+    std::smatch matches;
+
+    if (std::regex_search(_rawName, matches, versionRegex))
+    {
+        _name = matches[1];
+        _version = std::atoi(matches[2].str().c_str());
+    }
+}
 
 void DataTable::PrimaryKey(
     char const *primaryKey)
@@ -103,25 +118,20 @@ void DataTable::AddColumn(
     char const *name,
     char const *type)
 {
-    std::cout << name << ":" << type << std::endl;
     if (std::string_view(type) == "INTEGER" || std::string_view(type).substr(0, 7) == "NUMERIC")
     {
-        std::cout << name << ":ColumnTypes::Integer" << std::endl;
         _columns.insert(std::make_pair(name, ColumnTypes::Integer));
     }
     else if (std::string_view(type) == "TEXT" || std::string_view(type).substr(0, 8) == "NVARCHAR")
     {
-        std::cout << name << ":ColumnTypes::Text" << std::endl;
         _columns.insert(std::make_pair(name, ColumnTypes::Text));
     }
     else if (std::string_view(type) == "Blob")
     {
-        std::cout << name << ":ColumnTypes::Blob" << std::endl;
         _columns.insert(std::make_pair(name, ColumnTypes::Blob));
     }
     else if (std::string_view(type) == "REAL")
     {
-        std::cout << name << ":ColumnTypes::Real" << std::endl;
         _columns.insert(std::make_pair(name, ColumnTypes::Real));
     }
 }
@@ -180,7 +190,8 @@ std::vector<DataTable> ListTables(
             {
                 case (SQLITE3_TEXT):
                 {
-                    auto table = (const char *)sqlite3_column_text(stmt, i);
+                    auto table = std::string(reinterpret_cast<const char *>(sqlite3_column_text(stmt, i)));
+
                     tables.push_back(DataTable(table));
                     break;
                 }
@@ -198,7 +209,7 @@ void UpdateTableWithColumns(
     DataTable &table)
 {
     sqlite3_stmt *stmt;
-    sqlite3_prepare_v2(db, fmt::format("PRAGMA table_info({0});", table.Name()).c_str(), -1, &stmt, NULL);
+    sqlite3_prepare_v2(db, fmt::format("PRAGMA table_info({0});", table.RawName()).c_str(), -1, &stmt, NULL);
 
     int num_cols = sqlite3_column_count(stmt);
     if (num_cols < 6)
@@ -294,7 +305,7 @@ nlohmann::json DataCollection::get(
 {
     std::stringstream ss;
 
-    ss << "select * from " << table.Name() << " where " << table.PrimaryKey() << " = ?";
+    ss << "select * from " << table.RawName() << " where " << table.PrimaryKey() << " = ?";
 
     auto sql = ss.str();
 
@@ -319,7 +330,7 @@ nlohmann::json DataCollection::get(
 {
     std::stringstream ss;
 
-    ss << "select * from " << table.Name() << ";";
+    ss << "select * from " << table.RawName() << ";";
 
     auto sql = ss.str();
 
@@ -337,6 +348,7 @@ nlohmann::json DataCollection::post(
     const DataTable &table,
     const nlohmann::json &obj)
 {
+    (void)table;
     (void)obj;
 
     nlohmann::json v = {
@@ -406,40 +418,6 @@ void NotFoundError(
 std::string showHelp(
     std::string const &exe,
     bool showOptions);
-
-using FloatingPointMicroseconds = std::chrono::duration<double, std::micro>;
-
-class InstrumentationTimer
-{
-public:
-    explicit InstrumentationTimer(
-        const char *name)
-        : m_Name(name),
-          m_StartTimepoint(std::chrono::steady_clock::now()),
-          m_Stopped(false)
-    {}
-
-    ~InstrumentationTimer()
-    {
-        if (!m_Stopped)
-            Stop();
-    }
-
-    void Stop()
-    {
-        auto endTimepoint = std::chrono::steady_clock::now();
-        auto elapsedTime = std::chrono::time_point_cast<std::chrono::microseconds>(endTimepoint).time_since_epoch() - std::chrono::time_point_cast<std::chrono::microseconds>(m_StartTimepoint).time_since_epoch();
-
-        std::cout << "Rendered " << m_Name << " in " << elapsedTime.count() / 1000.f << "ms" << std::endl;
-
-        m_Stopped = true;
-    }
-
-private:
-    const char *m_Name;
-    std::chrono::time_point<std::chrono::steady_clock> m_StartTimepoint;
-    bool m_Stopped;
-};
 
 typedef std::function<void(const System::Net::Http::HttpListenerRequest &request, System::Net::Http::HttpListenerResponse &response, const std::smatch &matches)> RouteHandler;
 typedef std::vector<std::pair<std::regex, RouteHandler>> RouteCollection;
@@ -623,6 +601,7 @@ std::string Header()
        << "<link rel=\"preconnect\" href=\"https://fonts.googleapis.com\">"
        << "<link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin>"
        << "<link href=\"https://fonts.googleapis.com/css2?family=Prompt:wght@300&family=Ubuntu+Mono&display=swap\" rel=\"stylesheet\">"
+       << "<link rel=\"icon\" type=\"image/svg+xml\" href=\"data:image/svg+xml;utf8,<svg xmlns=&quot;http://www.w3.org/2000/svg&quot; width=&quot;16&quot; height=&quot;16&quot; fill=&quot;currentColor&quot; class=&quot;bi bi-code-slash&quot; viewBox=&quot;0 0 16 16&quot;><path d=&quot;M10.478 1.647a.5.5 0 1 0-.956-.294l-4 13a.5.5 0 0 0 .956.294l4-13zM4.854 4.146a.5.5 0 0 1 0 .708L1.707 8l3.147 3.146a.5.5 0 0 1-.708.708l-3.5-3.5a.5.5 0 0 1 0-.708l3.5-3.5a.5.5 0 0 1 .708 0zm6.292 0a.5.5 0 0 0 0 .708L14.293 8l-3.147 3.146a.5.5 0 0 0 .708.708l3.5-3.5a.5.5 0 0 0 0-.708l-3.5-3.5a.5.5 0 0 0-.708 0z&quot;/></svg>\">"
        << "</head>"
        << "<body>"
        << "<a href=\"/" << exe << "\" class=\"header-button float-end\">"
@@ -667,7 +646,7 @@ void RouteStatic(
     (void)request;
     (void)matches;
 
-    response.SetContentType(contentType);
+    response.Headers().insert(std::make_pair("Content-Type", contentType));
 
     Ok(content, request, response);
 }
@@ -685,7 +664,7 @@ void RouteHelp(
        << "<h2>Help page</h1>"
        << "<div class=\"container\">"
        << "<ul class=\"nav justify-content-end\"><li class=\"nav-item\"><a class=\"nav-link\" aria-current=\"page\" href=\"/quit\">Stop server</a></li></ul>"
-       << "<div class=\"card p-3\"><pre>" << showHelp(exe, true) << "</pre></div>"
+       << "<div class=\"block\"><pre>" << showHelp(exe, true) << "</pre></div>"
        << "</div>"
        << "</body>"
        << "</html>";
@@ -708,6 +687,7 @@ void RouteQuit(
        << "<title>Auto Sqlite Rest</title>"
        << "<meta charset=\"utf-8\">"
        << "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, shrink-to-fit=no\">"
+       << "<link rel=\"icon\" type=\"image/svg+xml\" href=\"data:image/svg+xml;utf8,<svg xmlns=&quot;http://www.w3.org/2000/svg&quot; width=&quot;16&quot; height=&quot;16&quot; fill=&quot;currentColor&quot; class=&quot;bi bi-code-slash&quot; viewBox=&quot;0 0 16 16&quot;><path d=&quot;M10.478 1.647a.5.5 0 1 0-.956-.294l-4 13a.5.5 0 0 0 .956.294l4-13zM4.854 4.146a.5.5 0 0 1 0 .708L1.707 8l3.147 3.146a.5.5 0 0 1-.708.708l-3.5-3.5a.5.5 0 0 1 0-.708l3.5-3.5a.5.5 0 0 1 .708 0zm6.292 0a.5.5 0 0 0 0 .708L14.293 8l-3.147 3.146a.5.5 0 0 0 .708.708l3.5-3.5a.5.5 0 0 0 0-.708l-3.5-3.5a.5.5 0 0 0-.708 0z&quot;/></svg>\">"
        << "</head>"
        << "<body>"
        << "<h2>Ok, i quit</h2>"
@@ -743,7 +723,7 @@ void RouteGetAllApi(
 
     auto data = collection.get(*found);
 
-    response.SetContentType("application/json");
+    response.Headers().insert(std::make_pair("Content-Type", "application/json"));
 
     Ok(data.dump(4), request, response);
 }
@@ -771,7 +751,13 @@ void RouteGetByIdApi(
 
     auto data = collection.get(*found, matches[2]);
 
-    response.SetContentType("application/json");
+    if (data.empty())
+    {
+        NotFoundError(request, response, matches);
+        return;
+    }
+
+    response.Headers().insert(std::make_pair("Content-Type", "application/json"));
 
     Ok(data.dump(4), request, response);
 }
@@ -801,192 +787,12 @@ void RouteRoot(
             continue;
         }
 
-        ss << "<h3>" << table.Name() << "</h3>";
+        std::map<std::string, std::string> variables = {
+            {"tableName", table.Name()},
+            {"tablePrimaryKey", table.PrimaryKey()},
+        };
 
-        ss << "<div>";
-
-        ss << "        <button type=\"button\" class=\"endpoint collapsible\">"
-           << "            <span class=\"method get\">GET</span>"
-           << "            <span>/api/" << table.Name() << "/{" << table.PrimaryKey() << "}</span>"
-           << "        </button>"
-           << "        <div class=\"content\">"
-           << "            <div class=\"content-margin\">"
-           << "                GetById"
-           << "            </div>"
-           << "            <div class=\"content-margin\">"
-           << "                <table>"
-           << "                    <thead>"
-           << "                        <tr>"
-           << "                            <th>Name</th>"
-           << "                            <th>Description</th>"
-           << "                        </tr>"
-           << "                    </thead>"
-           << "                    <tbody>"
-           << "                        <tr class=\"required\">"
-           << "                            <td>"
-           << "                                <strong>" << table.PrimaryKey() << "</strong>"
-           << "                            </td>"
-           << "                            <td>"
-           << "                                <p>Id field to retrieve.</p>"
-           << "                                <input class=\"request-parameter\" type=\"text\" name=\"" << table.PrimaryKey() << "\" placeholder=\"" << table.PrimaryKey() << "\" />"
-           << "                            </td>"
-           << "                        </tr>"
-           << "                    </tbody>"
-           << "                </table>"
-           << "            </div>"
-           << "            <div class=\"content-margin text-end\">"
-           << "                <button type=\"button\" onclick=\"new DotcppClient(this).runRequest('GET', '/api/" << table.Name() << "/{" << table.PrimaryKey() << "}')\">"
-           << "                    Try this endpoint"
-           << "                </button>"
-           << "            </div>"
-           << "        </div>";
-
-        ss << "        <button type=\"button\" class=\"endpoint collapsible\">"
-           << "            <span class=\"method get\">GET</span>"
-           << "            <span>/api/" << table.Name() << "</span>"
-           << "        </button>"
-           << "        <div class=\"content\">"
-           << "            <div class=\"content-margin\">"
-           << "                GetAll"
-           << "            </div>"
-           << "            <div class=\"content-margin text-end\">"
-           << "                <button type=\"button\" onclick=\"new DotcppClient(this).runRequest('GET', '/api/" << table.Name() << "')\">"
-           << "                    Try this endpoint"
-           << "                </button>"
-           << "            </div>"
-           << "        </div>";
-
-        ss << "        <button type=\"button\" class=\"endpoint collapsible\">"
-           << "            <span class=\"method post\">POST</span>"
-           << "            <span>/api/" << table.Name() << "</span>"
-           << "        </button>"
-           << "        <div class=\"content\" id=\"" << table.Name() << "_Post\">"
-           << "            <div class=\"content-margin\">"
-           << "                Post"
-           << "            </div>"
-           << "            <div class=\"content-margin\">"
-           << "                <table>"
-           << "                    <thead>"
-           << "                        <tr>"
-           << "                            <th>Name</th>"
-           << "                            <th>Description</th>"
-           << "                        </tr>"
-           << "                    </thead>"
-           << "                    <tbody>"
-           << "                        <tr class=\"required\">"
-           << "                            <td>"
-           << "                                <strong>body</strong>"
-           << "                            </td>"
-           << "                            <td>"
-           << "                                <p>target object to add.</p>"
-           << "                                <textarea class=\"request-parameter\" name=\"body\"></textarea>"
-           << "                            </td>"
-           << "                        </tr>"
-           << "                    </tbody>"
-           << "                </table>"
-           << "            </div>"
-           << "            <div class=\"content-margin text-end\">"
-           << "                <button type=\"button\" onclick=\"new DotcppClient(this).runRequest('POST', '/api/" << table.Name() << "')\">"
-           << "                    Try this endpoint"
-           << "                </button>"
-           << "            </div>"
-           << "        </div>";
-
-        ss << "        <button type=\"button\" class=\"endpoint collapsible\">"
-           << "            <span class=\"method put\">PUT</span>"
-           << "            <span>/api/" << table.Name() << "/{" << table.PrimaryKey() << "}</span>"
-           << "        </button>"
-           << "        <div class=\"content\" id=\"" << table.Name() << "_Put\">"
-           << "            <div class=\"content-margin\">"
-           << "                Put"
-           << "            </div>"
-           << "            <div class=\"content-margin\">"
-           << "                <table>"
-           << "                    <thead>"
-           << "                        <tr>"
-           << "                            <th>Name</th>"
-           << "                            <th>Description</th>"
-           << "                        </tr>"
-           << "                    </thead>"
-           << "                    <tbody>"
-           << "                        <tr class=\"required\">"
-           << "                            <td>"
-           << "                                <strong>" << table.PrimaryKey() << "</strong>"
-           << "                            </td>"
-           << "                            <td>"
-           << "                                <p>Id field of the item to update.</p>"
-           << "                                <input class=\"request-parameter\" type=\"text\" name=\"" << table.PrimaryKey() << "\" placeholder=\"" << table.PrimaryKey() << "\" />"
-           << "                            </td>"
-           << "                        </tr>"
-           << "                        <tr class=\"required\">"
-           << "                            <td>"
-           << "                                <strong>body</strong>"
-           << "                            </td>"
-           << "                            <td>"
-           << "                                <p>target object to add.</p>"
-           << "                                <textarea class=\"request-parameter\" name=\"body\"></textarea>"
-           << "                            </td>"
-           << "                        </tr>"
-           << "                    </tbody>"
-           << "                </table>"
-           << "            </div>"
-           << "            <div class=\"content-margin text-end\">"
-           << "                <button type=\"button\" onclick=\"new DotcppClient(this).runRequest('PUT', '/api/" << table.Name() << "/{" << table.PrimaryKey() << "}')\">"
-           << "                    Try this endpoint"
-           << "                </button>"
-           << "            </div>"
-           << "        </div>";
-
-        ss << "        <button type=\"button\" class=\"endpoint collapsible\">"
-           << "            <span class=\"method delete\">DELETE</span>"
-           << "            <span>/api/" << table.Name() << "/{" << table.PrimaryKey() << "}</span>"
-           << "        </button>"
-           << "        <div class=\"content\" id=\"" << table.Name() << "_Delete\">"
-           << "            <div class=\"content-margin\">"
-           << "                Delete"
-           << "            </div>"
-           << "            <div class=\"content-margin\">"
-           << "                <table>"
-           << "                    <thead>"
-           << "                        <tr>"
-           << "                            <th>Name</th>"
-           << "                            <th>Description</th>"
-           << "                        </tr>"
-           << "                    </thead>"
-           << "                    <tbody>"
-           << "                        <tr class=\"required\">"
-           << "                            <td>"
-           << "                                <strong>" << table.PrimaryKey() << "</strong>"
-           << "                            </td>"
-           << "                            <td>"
-           << "                                <p>Id field of the item to delete.</p>"
-           << "                                <input class=\"request-parameter\" type=\"text\" name=\"" << table.PrimaryKey() << "\" placeholder=\"" << table.PrimaryKey() << "\" />"
-           << "                            </td>"
-           << "                        </tr>"
-           << "                    </tbody>"
-           << "                </table>"
-           << "            </div>"
-           << "            <div class=\"content-margin text-end\">"
-           << "                <button type=\"button\" onclick=\"new DotcppClient(this).runRequest('DELETE', '/api/" << table.Name() << "/{" << table.PrimaryKey() << "}')\">"
-           << "                    Try this endpoint"
-           << "                </button>"
-           << "            </div>"
-           << "        </div>";
-
-        ss << "</div>";
-
-        /*
-        for (auto &col : table.Columns())
-        {
-            ss << col.first;
-            if (col.first == table.PrimaryKey())
-            {
-                ss << " (pk)";
-            }
-            ss << "<br/>\n";
-        }
-*/
-        ss << "</div>";
+        ss << TemplateUtils::ReplaceVariablesInString(HTDOCS_AGGREGATEROOTHTML, variables);
     }
 
     ss << Footer();
@@ -1001,10 +807,17 @@ void InternalServerError(
     const std::smatch &matches)
 {
     (void)request;
+    (void)matches;
 
     std::stringstream ss;
 
     ss << "<html>"
+       << "<head>"
+       << "<title>Auto Sqlite Rest</title>"
+       << "<meta charset=\"utf-8\">"
+       << "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, shrink-to-fit=no\">"
+       << "<link rel=\"icon\" type=\"image/svg+xml\" href=\"data:image/svg+xml;utf8,<svg xmlns=&quot;http://www.w3.org/2000/svg&quot; width=&quot;16&quot; height=&quot;16&quot; fill=&quot;currentColor&quot; class=&quot;bi bi-code-slash&quot; viewBox=&quot;0 0 16 16&quot;><path d=&quot;M10.478 1.647a.5.5 0 1 0-.956-.294l-4 13a.5.5 0 0 0 .956.294l4-13zM4.854 4.146a.5.5 0 0 1 0 .708L1.707 8l3.147 3.146a.5.5 0 0 1-.708.708l-3.5-3.5a.5.5 0 0 1 0-.708l3.5-3.5a.5.5 0 0 1 .708 0zm6.292 0a.5.5 0 0 0 0 .708L14.293 8l-3.147 3.146a.5.5 0 0 0 .708.708l3.5-3.5a.5.5 0 0 0 0-.708l-3.5-3.5a.5.5 0 0 0-.708 0z&quot;/></svg>\">"
+       << "</head>"
        << "<body>"
        << "<h1 class=\"display-4 text-center my-4\">Internal Server Error</h1>"
        << fmt::format("<p>{0}</p>", err)
@@ -1022,10 +835,17 @@ void NotFoundError(
     const std::smatch &matches)
 {
     (void)request;
+    (void)matches;
 
     std::stringstream ss;
 
     ss << "<html>"
+       << "<head>"
+       << "<title>Auto Sqlite Rest</title>"
+       << "<meta charset=\"utf-8\">"
+       << "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, shrink-to-fit=no\">"
+       << "<link rel=\"icon\" type=\"image/svg+xml\" href=\"data:image/svg+xml;utf8,<svg xmlns=&quot;http://www.w3.org/2000/svg&quot; width=&quot;16&quot; height=&quot;16&quot; fill=&quot;currentColor&quot; class=&quot;bi bi-code-slash&quot; viewBox=&quot;0 0 16 16&quot;><path d=&quot;M10.478 1.647a.5.5 0 1 0-.956-.294l-4 13a.5.5 0 0 0 .956.294l4-13zM4.854 4.146a.5.5 0 0 1 0 .708L1.707 8l3.147 3.146a.5.5 0 0 1-.708.708l-3.5-3.5a.5.5 0 0 1 0-.708l3.5-3.5a.5.5 0 0 1 .708 0zm6.292 0a.5.5 0 0 0 0 .708L14.293 8l-3.147 3.146a.5.5 0 0 0 .708.708l3.5-3.5a.5.5 0 0 0 0-.708l-3.5-3.5a.5.5 0 0 0-.708 0z&quot;/></svg>\">"
+       << "</head>"
        << "<body>"
        << "<h1 class=\"display-4 text-center my-4\">Not found Error</h1>"
        << "</body"

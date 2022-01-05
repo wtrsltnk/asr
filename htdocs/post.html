@@ -1,0 +1,34 @@
+
+<div class="modal">
+   <div class="content">
+      <div class="content-margin">
+         Put
+      </div>
+      <div class="content-margin">
+         <table>
+            <thead>
+               <tr>
+                  <th>Name</th>
+                  <th>Description</th>
+               </tr>
+            </thead>
+            <tbody>
+               <tr class="required">
+                  <td>
+                     <strong>body</strong>
+                  </td>
+                  <td>
+                     <p>target object to add.</p>
+                     <textarea class="request-parameter" name="body"></textarea>
+                  </td>
+               </tr>
+            </tbody>
+         </table>
+      </div>
+      <div class="content-margin text-end">
+         <button type="button" onclick="new DotcppClient(this).runRequest('PUT', '/api/{tableName}/{{{tablePrimaryKey}}}')">
+         Try this endpoint
+         </button>
+      </div>
+   </div>
+</div>

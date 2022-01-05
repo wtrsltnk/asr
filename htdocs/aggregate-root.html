@@ -1,0 +1,166 @@
+<h3>{tableName}</h3>
+<div>
+   <button type="button" class="endpoint collapsible">
+   <span class="method get">GET</span>
+   <span>/api/{tableName}/{{{tablePrimaryKey}}}</span>
+   </button>
+   <div class="content">
+      <div class="content-margin">
+         GetById
+      </div>
+      <div class="content-margin">
+         <table>
+            <thead>
+               <tr>
+                  <th>Name</th>
+                  <th>Description</th>
+               </tr>
+            </thead>
+            <tbody>
+               <tr class="required">
+                  <td>
+                     <strong>{tablePrimaryKey}</strong>
+                  </td>
+                  <td>
+                     <p>Id field to retrieve.</p>
+                     <input class="request-parameter" type="text" name="{tablePrimaryKey}" placeholder="{tablePrimaryKey}" />
+                  </td>
+               </tr>
+            </tbody>
+         </table>
+      </div>
+      <div class="content-margin text-end">
+         <button type="button" onclick="new DotcppClient(this).runRequest('GET', '/api/{tableName}/{{{tablePrimaryKey}}}')">
+         Try this endpoint
+         </button>
+      </div>
+   </div>
+   <button type="button" class="endpoint collapsible">
+   <span class="method get">GET</span>
+   <span>/api/{tableName}</span>
+   </button>
+   <div class="content">
+      <div class="content-margin">
+         GetAll
+      </div>
+      <div class="content-margin text-end">
+         <button type="button" onclick="new DotcppClient(this).runRequest('GET', '/api/{tableName}')">
+         Try this endpoint
+         </button>
+      </div>
+   </div>
+   <button type="button" class="endpoint collapsible">
+   <span class="method post">POST</span>
+   <span>/api/{tableName}</span>
+   </button>
+   <div class="content">
+      <div class="content-margin">
+         Post
+      </div>
+      <div class="content-margin">
+         <table>
+            <thead>
+               <tr>
+                  <th>Name</th>
+                  <th>Description</th>
+               </tr>
+            </thead>
+            <tbody>
+               <tr class="required">
+                  <td>
+                     <strong>body</strong>
+                  </td>
+                  <td>
+                     <p>target object to add.</p>
+                     <textarea class="request-parameter" name="body"></textarea>
+                  </td>
+               </tr>
+            </tbody>
+         </table>
+      </div>
+      <div class="content-margin text-end">
+         <button type="button" onclick="new DotcppClient(this).runRequest('POST', '/api/{tableName}')">
+         Try this endpoint
+         </button>
+      </div>
+   </div>
+   <button type="button" class="endpoint collapsible">
+   <span class="method put">PUT</span>
+   <span>/api/{tableName}/{{{tablePrimaryKey}}}</span>
+   </button>
+   <div class="content">
+      <div class="content-margin">
+         Put
+      </div>
+      <div class="content-margin">
+         <table>
+            <thead>
+               <tr>
+                  <th>Name</th>
+                  <th>Description</th>
+               </tr>
+            </thead>
+            <tbody>
+               <tr class="required">
+                  <td>
+                     <strong>{tablePrimaryKey}</strong>
+                  </td>
+                  <td>
+                     <p>Id field of the item to update.</p>
+                     <input class="request-parameter" type="text" name="{tablePrimaryKey}" placeholder="{tablePrimaryKey}" />
+                  </td>
+               </tr>
+               <tr class="required">
+                  <td>
+                     <strong>body</strong>
+                  </td>
+                  <td>
+                     <p>target object to add.</p>
+                     <textarea class="request-parameter" name="body"></textarea>
+                  </td>
+               </tr>
+            </tbody>
+         </table>
+      </div>
+      <div class="content-margin text-end">
+         <button type="button" onclick="new DotcppClient(this).runRequest('PUT', '/api/{tableName}/{{{tablePrimaryKey}}}')">
+         Try this endpoint
+         </button>
+      </div>
+   </div>
+   <button type="button" class="endpoint collapsible">
+   <span class="method delete">DELETE</span>
+   <span>/api/{tableName}/{{{tablePrimaryKey}}}</span>
+   </button>
+   <div class="content">
+      <div class="content-margin">
+         Delete
+      </div>
+      <div class="content-margin">
+         <table>
+            <thead>
+               <tr>
+                  <th>Name</th>
+                  <th>Description</th>
+               </tr>
+            </thead>
+            <tbody>
+               <tr class="required">
+                  <td>
+                     <strong>{tablePrimaryKey}</strong>
+                  </td>
+                  <td>
+                     <p>Id field of the item to delete.</p>
+                     <input class="request-parameter" type="text" name="{tablePrimaryKey}" placeholder="{tablePrimaryKey}" />
+                  </td>
+               </tr>
+            </tbody>
+         </table>
+      </div>
+      <div class="content-margin text-end">
+         <button type="button" onclick="new DotcppClient(this).runRequest('DELETE', '/api/{tableName}/{{{tablePrimaryKey}}}')">
+         Try this endpoint
+         </button>
+      </div>
+   </div>
+</div>
