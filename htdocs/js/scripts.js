@@ -65,23 +65,27 @@ class DotcppClient {
             this.responseContainer.appendChild(pre);
             this.content.appendChild(this.responseContainer);
         }
-
-        this.xmlhttp = new XMLHttpRequest();
     }
 
     sendRequest(method, url) {
+        this.xmlhttp = new XMLHttpRequest();
+
         var requestParameters = this.content.querySelectorAll('.request-parameter');
-
         url = this.updateUrl(url, requestParameters);
-        var postData = null;
-        if (method === 'POST') {
+        this.xmlhttp.open(method, url, true);
 
-            postData = {};
+        var postData = null;
+        if (method.toLowerCase() === 'post') {
 
             for (var requestParameter of requestParameters) {
-                postData[requestParameter.name] = requestParameter.value;
+                if (requestParameter.name === 'body') {
+                    postData = requestParameter.value;
+                    this.xmlhttp.setRequestHeader("Content-Type", "application/json");
+                }
             }
         }
+
+        console.log(method, postData);
 
         return new Promise((resolve, reject) => {
            let x = this.xmlhttp;
@@ -96,7 +100,7 @@ class DotcppClient {
                    else if (x.status === 400) {
                       const errorObject = {
                            status: 'Bad Request',
-                           error: x.responseText
+                           message: x.responseText
                       };
                      reject(errorObject);
                   }
@@ -109,14 +113,13 @@ class DotcppClient {
                   else {
                       const errorObject = {
                            status: x.status,
-                           msg: 'Something else other than 200 was returned'
+                           message: 'Something else other than 200 was returned'
                       };
                       reject(errorObject);
                   }
                }
            };
 
-           x.open(method, url, true);
            x.send(postData);
         });
     }
@@ -139,6 +142,17 @@ class DotcppClient {
         }
 
         return url;
+    }
+
+    runRequestFromForm() {
+        var aggregateRoot = this.content.querySelector('input[name="AggregateRoot"]');
+        if (aggregateRoot === null) {
+            return;
+        }
+
+        var url = '/api/' + aggregateRoot.value;
+
+        this.runRequest('post', url);
     }
 
     runRequest(method, url) {
@@ -238,6 +252,34 @@ class Bootstrap {
                   content.style.maxHeight = (vh - 100) + "px";
               }
           });
+        }
+
+        var modals = document.getElementsByClassName("modal");
+
+        for (var modal of modals) {
+            var closeButtons = modal.querySelectorAll('*[data-close-modal="this"]');
+            for (var closeButton of closeButtons) {
+                closeButton
+                    .addEventListener(
+                        'click',
+                        (e) => {
+                            modal.style.display = 'none';
+                        });
+            }
+        }
+
+        var openModalButtons = document.querySelectorAll("button[data-open-modal]");
+        for (var openModalButton of openModalButtons) {
+            openModalButton
+                .addEventListener(
+                    'click',
+                    (e) => {
+                        var modal = document.getElementById(openModalButton.getAttribute('data-open-modal'));
+                        if (modal === null) {
+                            return;
+                        }
+                        modal.style.display = 'block';
+                    });
         }
     }
 }

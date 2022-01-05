@@ -13,6 +13,7 @@ configure_file(src/config.h.in config.h)
 add_htdocs_file("htdocs/css/styles.css" HTDOCS_STYLES)
 add_htdocs_file("htdocs/js/scripts.js" HTDOCS_SCRIPTS)
 add_htdocs_file("htdocs/aggregate-root.html" HTDOCS_AGGREGATEROOTHTML)
+add_htdocs_file("htdocs/postmodal.html" HTDOCS_POSTMODALHTML)
 
 configure_file(src/htdocs.h.in htdocs.h)
 
@@ -45,6 +46,7 @@ add_executable(asr
     htdocs/css/styles.css
     htdocs/js/scripts.js
     htdocs/aggregate-root.html
+    htdocs/postmodal.html
     src/program.cpp
     src/common/templateutils.cpp
     src/common/templateutils.h

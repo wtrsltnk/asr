@@ -1,0 +1,51 @@
+
+<div class="modal" id="AddContenModal">
+   <div class="modal-content content">
+       <button class="close" title="Close" data-close-modal="this">
+           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" class="bi bi-x" viewBox="0 0 16 16"><path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z"/></svg>
+       </button>
+      <h3>
+         Add new content
+      </h3>
+      <div class="content-margin">
+         <table>
+            <thead>
+               <tr>
+                  <th>Name</th>
+                  <th>Description</th>
+               </tr>
+            </thead>
+            <tbody>
+               <tr class="required">
+                  <td>
+                     <strong>Aggregate root</strong>
+                  </td>
+                  <td>
+                     <p>Name of the aggregate root to add content to.</p>
+                     <input class="request-parameter" type="text" name="AggregateRoot" placeholder="Aggregate root" />
+                  </td>
+               </tr>
+               <tr class="required">
+                  <td>
+                     <strong>body</strong>
+                  </td>
+                  <td>
+                     <p>Object to add.</p>
+                     <textarea class="request-parameter" name="body">{
+    "Id": 1,
+}</textarea>
+                  </td>
+               </tr>
+            </tbody>
+         </table>
+      </div>
+      <div class="content-margin text-end">
+         <button type="button" onclick="new DotcppClient(this).runRequestFromForm()">
+            Add
+         </button>
+         <button type="button" data-close-modal="this">
+            Close
+         </button>
+      </div>
+   </div>
+</div>

@@ -687,3 +687,43 @@ button.endpoint.active {
     background-color: #333;
     padding: 10px;
 }
+
+.modal {
+    display: none;
+    position: absolute;
+    top: 0px;
+    left: 0px;
+    right: 0px;
+    bottom: 0px;
+    background-color: transparent;
+}
+
+.modal::after {
+    content: ' ';
+    position: absolute;
+    top: 0px;
+    left: 0px;
+    right: 0px;
+    bottom: 0px;
+    background-color: rgba(0, 0, 0, 0.3);
+    z-index: 1000;
+}
+
+.modal .modal-content {
+    background-color: white;
+    z-index: 1001;
+    padding: 15px 30px;
+    width: 800px;
+    position: absolute;
+    left: 50%;
+    top: 20px;
+    margin-left: -400px;
+    }
+
+.modal .modal-content button.close {
+    margin-top: 9px
+}
+
+.modal .modal-content.content {
+    max-height: unset;
+}

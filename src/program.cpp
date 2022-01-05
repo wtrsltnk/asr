@@ -157,7 +157,7 @@ public:
 
     nlohmann::json post(
         const DataTable &table,
-        nlohmann::json const &obj);
+        nlohmann::json const &obj) const;
 
     void patch(
         const DataTable &table,
@@ -346,13 +346,106 @@ nlohmann::json DataCollection::get(
 
 nlohmann::json DataCollection::post(
     const DataTable &table,
-    const nlohmann::json &obj)
+    const nlohmann::json &obj) const
 {
     (void)table;
     (void)obj;
 
+    std::vector<std::string> keys;
+    std::vector<nlohmann::json> values;
+
+    for (auto &val : obj.items())
+    {
+        if (table.Columns().find(val.key()) == table.Columns().end())
+        {
+            continue;
+        }
+
+        if (val.key() == table.PrimaryKey())
+        {
+            continue;
+        }
+
+        keys.push_back(val.key());
+        values.push_back(val.value());
+    }
+
+    if (keys.empty())
+    {
+        nlohmann::json error = {
+            {"error", "object has no known properties"},
+        };
+
+        return error;
+    }
+
+    std::stringstream ss;
+
+    ss << "insert into " << table.RawName() << " (";
+    for (size_t i = 0; i < keys.size(); i++)
+    {
+        if (i > 0) ss << ",  ";
+        ss << keys[i];
+    }
+    ss << ") VALUES (";
+    for (size_t i = 0; i < values.size(); i++)
+    {
+        if (i > 0)
+            ss << ", ?";
+        else
+            ss << "?";
+    }
+    ss << ");";
+
+    auto sql = ss.str();
+
+    sqlite3_stmt *stmt;
+    sqlite3_prepare_v2(_db, sql.c_str(), int(sql.length()), &stmt, nullptr);
+
+    for (size_t i = 0; i < values.size(); i++)
+    {
+        if (values[i].is_string())
+        {
+            auto var = values[i].get<std::string>();
+            sqlite3_bind_text(stmt, 1 + int(i), var.c_str(), int(var.length()), SQLITE_TRANSIENT);
+        }
+        else if (values[i].is_number_integer())
+        {
+            auto var = values[i].get<int>();
+            sqlite3_bind_int(stmt, 1 + int(i), var);
+        }
+    }
+
+    auto stepResult = sqlite3_step(stmt);
+    if (stepResult == SQLITE_DONE)
+    {
+        nlohmann::json v = {
+            {table.PrimaryKey(), sqlite3_last_insert_rowid(this->_db)},
+        };
+
+        return v;
+    }
+    else if (stepResult == SQLITE_CONSTRAINT)
+    {
+        nlohmann::json error = {
+            {"error", "Abort due to constraint violation"},
+        };
+
+        return error;
+    }
+    else if (stepResult == SQLITE_ERROR || stepResult == SQLITE_MISUSE)
+    {
+        nlohmann::json error = {
+            {"error", sqlite3_errmsg(this->_db)},
+        };
+
+        return error;
+    }
+
+    sqlite3_finalize(stmt);
+
     nlohmann::json v = {
-        {"id", 1},
+        {table.PrimaryKey(), -1},
     };
 
     return v;
@@ -397,6 +490,12 @@ void RouteGetByIdApi(
     System::Net::Http::HttpListenerResponse &response,
     const std::smatch &matches);
 
+void RoutePostApi(
+    const DataCollection &collection,
+    const System::Net::Http::HttpListenerRequest &request,
+    System::Net::Http::HttpListenerResponse &response,
+    const std::smatch &matches);
+
 void RouteRoot(
     const char *dbFile,
     const DataCollection &collection,
@@ -404,11 +503,15 @@ void RouteRoot(
     System::Net::Http::HttpListenerResponse &response,
     const std::smatch &matches);
 
+void BadRequest(
+    std::string const &err,
+    const System::Net::Http::HttpListenerRequest &request,
+    System::Net::Http::HttpListenerResponse &response);
+
 void InternalServerError(
     std::string const &err,
     const System::Net::Http::HttpListenerRequest &request,
-    System::Net::Http::HttpListenerResponse &response,
-    const std::smatch &matches);
+    System::Net::Http::HttpListenerResponse &response);
 
 void NotFoundError(
     const System::Net::Http::HttpListenerRequest &request,
@@ -426,6 +529,10 @@ class Router
 {
 public:
     void Get(
+        const std::string &pattern,
+        RouteHandler handler);
+
+    void Post(
         const std::string &pattern,
         RouteHandler handler);
 
@@ -448,6 +555,15 @@ void Router::Get(
     _getRoutes.push_back(std::make_pair(std::move(r), handler));
 }
 
+void Router::Post(
+    const std::string &pattern,
+    RouteHandler handler)
+{
+    auto r = std::regex(pattern);
+
+    _postRoutes.push_back(std::make_pair(std::move(r), handler));
+}
+
 bool Router::Route(
     const System::Net::Http::HttpListenerRequest &request,
     System::Net::Http::HttpListenerResponse &response)
@@ -455,6 +571,22 @@ bool Router::Route(
     if (request.HttpMethod() == "GET")
     {
         for (auto &route : _getRoutes)
+        {
+            std::smatch matches;
+            if (!std::regex_match(request.RawUrl(), matches, route.first))
+            {
+                continue;
+            }
+
+            route.second(request, response, matches);
+
+            return true;
+        }
+    }
+
+    else if (request.HttpMethod() == "POST")
+    {
+        for (auto &route : _postRoutes)
         {
             std::smatch matches;
             if (!std::regex_match(request.RawUrl(), matches, route.first))
@@ -544,6 +676,13 @@ int main(
                        const std::smatch &matches) {
                        RouteGetByIdApi(collection, request, response, matches);
                    });
+        router.Post(R"(/api/([\w\-]+)$)",
+                    [&collection](
+                        const System::Net::Http::HttpListenerRequest &request,
+                        System::Net::Http::HttpListenerResponse &response,
+                        const std::smatch &matches) {
+                        RoutePostApi(collection, request, response, matches);
+                    });
 
         router.Get("/styles.css",
                    [](
@@ -633,6 +772,13 @@ void Ok(
 
     response.SetStatusCode(200);
     response.WriteOutput(content);
+    response.CloseOutput();
+}
+
+void NoContent(
+    System::Net::Http::HttpListenerResponse &response)
+{
+    response.SetStatusCode(204);
     response.CloseOutput();
 }
 
@@ -762,6 +908,38 @@ void RouteGetByIdApi(
     Ok(data.dump(4), request, response);
 }
 
+void RoutePostApi(
+    const DataCollection &collection,
+    const System::Net::Http::HttpListenerRequest &request,
+    System::Net::Http::HttpListenerResponse &response,
+    const std::smatch &matches)
+{
+    auto found = std::find_if(
+        collection.Tables().begin(),
+        collection.Tables().end(),
+        [&matches](const DataTable &table) {
+            return table.Name() == matches[1];
+        });
+
+    if (found == collection.Tables().end())
+    {
+        NotFoundError(request, response, matches);
+        return;
+    }
+
+    auto jsonData = nlohmann::json::parse(request._payload.begin(), request._payload.end());
+
+    auto result = collection.post(*found, jsonData);
+
+    std::cout << result.dump(4) << std::endl;
+    if (result.count("error") > 0)
+    {
+        BadRequest(result["error"].get<std::string>(), request, response);
+    }
+
+    NoContent(response);
+}
+
 void RouteRoot(
     const char *dbFile,
     const DataCollection &collection,
@@ -778,7 +956,8 @@ void RouteRoot(
     ss << Header()
        << fmt::format("<h2>{0}</h2>", db.filename().string());
 
-    ss << "<div class=\"container\">";
+    ss << "<div class=\"container\">"
+       << "<ul class=\"nav justify-content-end\"><li class=\"nav-item\"><button type=\"button\" class=\"nav-link\" data-open-modal=\"AddContenModal\">Add content</buttons></li></ul>";
 
     for (auto &table : collection.Tables())
     {
@@ -795,19 +974,29 @@ void RouteRoot(
         ss << TemplateUtils::ReplaceVariablesInString(HTDOCS_AGGREGATEROOTHTML, variables);
     }
 
-    ss << Footer();
+    ss << HTDOCS_POSTMODALHTML << Footer();
 
     Ok(ss.str(), request, response);
+}
+
+void BadRequest(
+    std::string const &err,
+    const System::Net::Http::HttpListenerRequest &request,
+    System::Net::Http::HttpListenerResponse &response)
+{
+    (void)request;
+
+    response.SetStatusCode(400);
+    response.WriteOutput(err);
+    response.CloseOutput();
 }
 
 void InternalServerError(
     std::string const &err,
     const System::Net::Http::HttpListenerRequest &request,
-    System::Net::Http::HttpListenerResponse &response,
-    const std::smatch &matches)
+    System::Net::Http::HttpListenerResponse &response)
 {
     (void)request;
-    (void)matches;
 
     std::stringstream ss;
 
